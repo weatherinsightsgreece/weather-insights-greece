@@ -1,0 +1,8 @@
+streamlit
+xarray
+siphon
+plotly
+pandas
+numpy
+scipy
+

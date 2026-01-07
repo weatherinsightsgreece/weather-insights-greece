@@ -1,167 +1,95 @@
 import streamlit as st
-import xarray as xr
-from siphon.catalog import TDSCatalog
-import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
-import time
+import plotly.express as px
+import requests
+from datetime import datetime, timedelta
 
-# ---------------------
-# Ρυθμίσεις σελίδας
-# ---------------------
-st.set_page_config(layout="wide")
+st.set_page_config(layout="wide", page_title="Weather Insights Greece Model")
+
 st.title("Weather Insights Greece Model")
 
-# ---------------------
-# Περιοχή Ευρώπης
-# ---------------------
-lat_slice = slice(72, 34)
-lon_slice = slice(-10, 40)
+# --- Πρωτεύουσες Ευρώπης ---
+capitals = pd.DataFrame({
+    "City":["Athens","Berlin","Paris","Rome","Madrid","Lisbon","Warsaw","Vienna","Brussels","Copenhagen","Stockholm","Oslo","Helsinki","Budapest","Prague"],
+    "Lat":[37.9838,52.5200,48.8566,41.9028,40.4168,38.7169,52.2297,48.2082,50.8503,55.6761,59.3293,59.9139,60.1699,47.4979,50.0755],
+    "Lon":[23.7275,13.4050,2.3522,12.4964,-3.7038,-9.1392,21.0122,16.3738,4.3517,12.5683,18.0686,10.7522,24.9384,19.0402,14.4378]
+})
 
-# ---------------------
-# Φόρτωση δεδομένων με cache και TTL (auto-refresh)
-# ---------------------
-@st.cache_data(ttl=1800)  # ανανέωση κάθε 30 λεπτά
-def load_data():
-    # GFS
-    gfs_catalog = TDSCatalog("https://thredds.ucar.edu/thredds/catalog/grib/NCEP/GEFS/Global_0p25deg/catalog.xml")
-    gfs_ds = list(gfs_catalog.datasets.values())[0]
-    gfs = xr.open_dataset(gfs_ds.access_urls['OPENDAP'])
-    gfs850 = gfs['Temperature_isobaric'].sel(isobaric=85000) - 273.15
-    gfs850 = gfs850.sel(latitude=lat_slice, longitude=lon_slice)
-    gfs_precip = gfs['Total_precipitation_surface'].sel(latitude=lat_slice, longitude=lon_slice)
+# --- Επιλογή map ---
+map_choice = st.selectbox("Διάλεξε Χάρτη:", ["850hPa Temperature", "Precipitation"])
 
-    # ICON
-    icon_catalog = TDSCatalog("https://thredds.ucar.edu/thredds/catalog/grib/DWD/ICON-EU/icon-eu-0p0625deg/catalog.xml")
-    icon_ds = list(icon_catalog.datasets.values())[0]
-    icon = xr.open_dataset(icon_ds.access_urls['OPENDAP'])
-    icon850 = icon['Temperature_isobaric'].sel(isobaric=85000) - 273.15
-    icon850 = icon850.sel(latitude=lat_slice, longitude=lon_slice)
+# --- Ανάκτηση δεδομένων από Open-Meteo ---
+def fetch_weather():
+    # Κατεβάζουμε forecast 5 ημερών για Ευρώπη (approx mid-point)
+    lats = capitals['Lat'].mean()
+    lons = capitals['Lon'].mean()
+    start = datetime.utcnow()
+    end = start + timedelta(days=5)
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lats}&longitude={lons}&hourly=temperature_2m,precipitation&timezone=UTC"
+    r = requests.get(url)
+    data = r.json()
+    times = data['hourly']['time']
+    temp = data['hourly']['temperature_2m']
+    precip = data['hourly']['precipitation']
+    df = pd.DataFrame({"time": times, "temperature": temp, "precipitation": precip})
+    df['time'] = pd.to_datetime(df['time'])
+    return df
 
-    # Multi-model median
-    median_temp = (gfs850.median(dim='ensemble') + icon850.median(dim='ensemble')) / 2
+df_weather = fetch_weather()
 
-    return median_temp, gfs_precip, gfs850.time.values
+# --- Animation ---
+st.write("Παίξε την πρόβλεψη (3 ώρες ανά frame)")
+start_btn, stop_btn = st.columns(2)
+if start_btn.button("Start"):
+    st.session_state['play'] = True
+if stop_btn.button("Stop"):
+    st.session_state['play'] = False
 
-median_temp, precip, time_values = load_data()
-lon = median_temp.longitude.values
-lat = median_temp.latitude.values
-frames = min(40, len(median_temp.time))
+if 'play' not in st.session_state:
+    st.session_state['play'] = False
 
-# ---------------------
-# Πρωτεύουσες Ευρώπης
-# ---------------------
-capitals = {
-    'Αθήνα':[37.98,23.72], 'Βιέννη':[48.21,16.37], 'Βρυξέλλες':[50.85,4.35],
-    'Σόφια':[42.70,23.32], 'Βερολίνο':[52.52,13.40], 'Βουδαπέστη':[47.50,19.04],
-    'Κοπεγχάγη':[55.68,12.57], 'Παρίσι':[48.85,2.35], 'Λισαβόνα':[38.72,-9.13],
-    'Λονδίνο':[51.51,-0.13], 'Ρώμη':[41.90,12.50], 'Μαδρίτη':[40.42,-3.70],
-    'Στοκχόλμη':[59.33,18.07], 'Ταλίν':[59.44,24.75], 'Ελσίνκι':[60.17,24.94],
-    'Βαρσοβία':[52.23,21.01], 'Μπρατισλάβα':[48.15,17.11], 'Λουξεμβούργο':[49.61,6.13],
-    'Μάλτα':[35.89,14.51], 'Σαράγεβο':[43.85,18.36], 'Βελιγράδι':[44.82,20.46],
-    'Σκόπια':[41.99,21.43], 'Τίρανα':[41.33,19.82]
-}
+# --- Επιλογή frame ---
+frame = 0
+if st.session_state['play']:
+    import time
+    for i in range(0, len(df_weather), 3):
+        frame = i
+        st.session_state['play'] = True
+        time.sleep(1.5)
+        st.experimental_rerun()
 
-# ---------------------
-# Toggle χάρτη
-# ---------------------
-if "map_type" not in st.session_state:
-    st.session_state.map_type = "850hPa Θερμοκρασία"
+current_time = df_weather.iloc[frame]['time']
 
-if st.button("Αλλαγή Χάρτη"):
-    st.session_state.map_type = "Υετός" if st.session_state.map_type=="850hPa Θερμοκρασία" else "850hPa Θερμοκρασία"
+# --- Χρώματα θερμοκρασίας ---
+def temp_color(t):
+    if t<-10: return "purple"
+    elif -9<=t<=-5: return "darkblue"
+    elif -4<=t<=0: return "lightblue"
+    elif 1<=t<=5: return "lightgreen"
+    elif 6<=t<=10: return "green"
+    elif 11<=t<=15: return "yellow"
+    elif 16<=t<=20: return "orange"
+    else: return "red"
 
-map_type = st.session_state.map_type
+# --- Plot ---
+if map_choice=="850hPa Temperature":
+    capitals['Temp'] = df_weather.iloc[frame]['temperature']
+    capitals['Color'] = capitals['Temp'].apply(temp_color)
+    fig = px.scatter_geo(capitals, lat='Lat', lon='Lon', text='City', color='Temp',
+                         color_continuous_scale=["purple","darkblue","lightblue","lightgreen","green","yellow","orange","red"],
+                         range_color=[-20,35], projection="natural earth", scope="europe")
+else:
+    capitals['Precip'] = df_weather.iloc[frame]['precipitation']
+    fig = px.scatter_geo(capitals, lat='Lat', lon='Lon', text='City', color='Precip',
+                         color_continuous_scale=["lightblue","blue","darkblue","pink","purple"],
+                         range_color=[0,30], projection="natural earth", scope="europe")
 
-# ---------------------
-# Start / Stop
-# ---------------------
-if "frame_idx" not in st.session_state:
-    st.session_state.frame_idx = 0
-if "playing" not in st.session_state:
-    st.session_state.playing = False
+fig.update_layout(
+    title=f"Weather Insights Greece Model - {current_time.strftime('%Y-%m-%d %H:%M UTC')}",
+    geo=dict(showland=True, landcolor="lightgrey"),
+    margin={"r":0,"t":50,"l":0,"b":0}
+)
 
-if st.button("Start"):
-    st.session_state.playing = True
-if st.button("Stop"):
-    st.session_state.playing = False
-
-current_map = st.empty()
-
-# ---------------------
-# Auto-play loop με smooth animation
-# ---------------------
-while st.session_state.get("playing", False):
-    idx = st.session_state.frame_idx
-    next_idx = (idx + 1) % frames
-
-    # Smooth interpolation
-    temp_current = median_temp.isel(time=idx).values
-    temp_next = median_temp.isel(time=next_idx).values
-    rain_current = precip.isel(time=idx).values
-    rain_next = precip.isel(time=next_idx).values
-
-    steps = 5
-    for s in range(steps):
-        alpha = s / steps
-        temp_frame = temp_current*(1-alpha) + temp_next*alpha
-        rain_frame = rain_current*(1-alpha) + rain_next*alpha
-        model_time = pd.to_datetime(str(time_values[idx])) + pd.Timedelta(hours=3*alpha)
-        model_name = "Weather Insights Greece Model"
-
-        fig = go.Figure()
-
-        if map_type=="850hPa Θερμοκρασία":
-            fig.add_trace(go.Heatmap(
-                z=temp_frame, x=lon, y=lat,
-                colorscale="RdBu_r",
-                zmin=-15, zmax=30,
-                colorbar=dict(title="T850 °C")
-            ))
-            toggle_text = "Υετός"
-        else:
-            fig.add_trace(go.Heatmap(
-                z=rain_frame, x=lon, y=lat,
-                colorscale=[
-                    [0,"lightblue"],[0.2,"blue"],[0.4,"darkblue"],
-                    [0.6,"pink"],[1,"purple"]
-                ],
-                zmin=0, zmax=25,
-                colorbar=dict(title="mm")
-            ))
-            toggle_text = "850hPa"
-
-        # Πρωτεύουσες
-        for city,(lat_c,lon_c) in capitals.items():
-            fig.add_trace(go.Scatter(x=[lon_c], y=[lat_c], mode='text', text=[city]))
-
-        # Ημερομηνία/ώρα + όνομα μοντέλου
-        fig.add_annotation(
-            x=lon[0], y=lat[-1],
-            text=f"{model_time.strftime('%Y-%m-%d %H:%M UTC')} | {model_name}",
-            showarrow=False, xanchor='left', yanchor='top',
-            font=dict(color="black", size=14)
-        )
-
-        # Toggle πάνω δεξιά
-        fig.add_annotation(
-            x=lon[-1], y=lat[-1],
-            text=toggle_text,
-            showarrow=False, xanchor='right', yanchor='top',
-            font=dict(color="black", size=14)
-        )
-
-        # Όνομα "Weather Insights Greece" κάτω
-        fig.add_annotation(
-            x=(lon[0]+lon[-1])/2, y=lat[0]-2,
-            text="Weather Insights Greece",
-            showarrow=False,
-            font=dict(size=12, color="black")
-        )
-
-        current_map.plotly_chart(fig, use_container_width=True)
-        time.sleep(0.3)
-
-    st.session_state.frame_idx = next_idx
-
+st.plotly_chart(fig, use_container_width=True)
 

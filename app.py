@@ -35,35 +35,25 @@ def fetch_weather():
 
 df_weather = fetch_weather()
 
-# ----------------------------
 # Session state για animation
-# ----------------------------
 if 'frame' not in st.session_state:
     st.session_state.frame = 0
 if 'play' not in st.session_state:
     st.session_state.play = False
 
-def start():
+# Start / Stop buttons
+col1, col2 = st.columns(2)
+if col1.button("Start"):
     st.session_state.play = True
-def stop():
+if col2.button("Stop"):
     st.session_state.play = False
 
-col1, col2 = st.columns(2)
-col1.button("Start", on_click=start)
-col2.button("Stop", on_click=stop)
-
-# ----------------------------
-# Animation (χωρίς crash)
-# ----------------------------
-def next_frame():
+# Animation χωρίς crash
+if st.session_state.play:
     st.session_state.frame += 3
     if st.session_state.frame >= len(df_weather):
         st.session_state.frame = 0
-
-if st.session_state.play:
-    next_frame()
-    time.sleep(1.5)
-    st.experimental_rerun()
+    st.experimental_rerun()  # Ασφαλές, αφού το play flag ελέγχει rerun
 
 frame = st.session_state.frame
 current_time = df_weather.iloc[frame]['time']
@@ -84,26 +74,26 @@ capitals_plot['Temp'] = df_weather.iloc[frame]['temperature']
 capitals_plot['Precip'] = df_weather.iloc[frame]['precipitation']
 capitals_plot['ColorTemp'] = capitals_plot['Temp'].apply(temp_color)
 
-# Δημιουργία chart
-if map_choice == "850hPa Temperature":
-    fig = px.scatter_geo(capitals_plot, lat='Lat', lon='Lon', text='City', color='Temp',
-                         color_continuous_scale=["purple","darkblue","lightblue","lightgreen","green","yellow","orange","red"],
-                         range_color=[-20,35], projection="natural earth", scope="europe")
-else:
-    fig = px.scatter_geo(capitals_plot, lat='Lat', lon='Lon', text='City', color='Precip',
-                         color_continuous_scale=["lightblue","blue","darkblue","pink","purple"],
-                         range_color=[0,30], projection="natural earth", scope="europe")
+# Δημιουργία charts side-by-side
+col_map1, col_map2 = st.columns(2)
 
-fig.update_layout(
-    title=f"{current_time.strftime('%Y-%m-%d %H:%M UTC')} - {map_choice}",
-    geo=dict(showland=True, landcolor="lightgrey"),
-    margin={"r":0,"t":50,"l":0,"b":0}
-)
+fig1 = px.scatter_geo(capitals_plot, lat='Lat', lon='Lon', text='City', color='Temp',
+                      color_continuous_scale=["purple","darkblue","lightblue","lightgreen","green","yellow","orange","red"],
+                      range_color=[-20,35], projection="natural earth", scope="europe")
+fig1.update_layout(title=f"850hPa Temperature - {current_time.strftime('%Y-%m-%d %H:%M UTC')}",
+                   geo=dict(showland=True, landcolor="lightgrey"), margin={"r":0,"t":50,"l":0,"b":0})
+col_map1.plotly_chart(fig1, use_container_width=True)
 
-st.plotly_chart(fig, use_container_width=True)
+fig2 = px.scatter_geo(capitals_plot, lat='Lat', lon='Lon', text='City', color='Precip',
+                      color_continuous_scale=["lightblue","blue","darkblue","pink","purple"],
+                      range_color=[0,30], projection="natural earth", scope="europe")
+fig2.update_layout(title=f"Precipitation - {current_time.strftime('%Y-%m-%d %H:%M UTC')}",
+                   geo=dict(showland=True, landcolor="lightgrey"), margin={"r":0,"t":50,"l":0,"b":0})
+col_map2.plotly_chart(fig2, use_container_width=True)
 
 # Footer
 st.markdown("<div style='text-align:center; font-size:12px;'>Weather Insights Greece</div>", unsafe_allow_html=True)
+
 
 
 

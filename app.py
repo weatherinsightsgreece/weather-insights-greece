@@ -15,10 +15,7 @@ capitals = pd.DataFrame({
     "Lon":[23.7275,13.4050,2.3522,12.4964,-3.7038,-9.1392,21.0122,16.3738,4.3517,12.5683,18.0686,10.7522,24.9384,19.0402,14.4378]
 })
 
-# Επιλογή map
-map_choice = st.selectbox("Διάλεξε Χάρτη:", ["850hPa Temperature", "Precipitation"])
-
-# Φόρτωση δεδομένων
+# Φόρτωση δεδομένων από Open-Meteo
 @st.cache_data(ttl=1800)
 def fetch_weather():
     lat = capitals['Lat'].mean()
@@ -35,25 +32,20 @@ def fetch_weather():
 
 df_weather = fetch_weather()
 
+# ----------------------------
 # Session state για animation
+# ----------------------------
 if 'frame' not in st.session_state:
     st.session_state.frame = 0
 if 'play' not in st.session_state:
     st.session_state.play = False
 
-# Start / Stop buttons
+# Start / Stop κουμπιά
 col1, col2 = st.columns(2)
 if col1.button("Start"):
     st.session_state.play = True
 if col2.button("Stop"):
     st.session_state.play = False
-
-# Animation χωρίς crash
-if st.session_state.play:
-    st.session_state.frame += 3
-    if st.session_state.frame >= len(df_weather):
-        st.session_state.frame = 0
-    st.experimental_rerun()  # Ασφαλές, αφού το play flag ελέγχει rerun
 
 frame = st.session_state.frame
 current_time = df_weather.iloc[frame]['time']
@@ -69,14 +61,16 @@ def temp_color(t):
     elif 16<=t<=20: return "orange"
     else: return "red"
 
+# Προσθήκη χρωμάτων
 capitals_plot = capitals.copy()
 capitals_plot['Temp'] = df_weather.iloc[frame]['temperature']
 capitals_plot['Precip'] = df_weather.iloc[frame]['precipitation']
 capitals_plot['ColorTemp'] = capitals_plot['Temp'].apply(temp_color)
 
-# Δημιουργία charts side-by-side
+# Δημιουργία δύο charts side-by-side
 col_map1, col_map2 = st.columns(2)
 
+# 850hPa Temperature
 fig1 = px.scatter_geo(capitals_plot, lat='Lat', lon='Lon', text='City', color='Temp',
                       color_continuous_scale=["purple","darkblue","lightblue","lightgreen","green","yellow","orange","red"],
                       range_color=[-20,35], projection="natural earth", scope="europe")
@@ -84,6 +78,7 @@ fig1.update_layout(title=f"850hPa Temperature - {current_time.strftime('%Y-%m-%d
                    geo=dict(showland=True, landcolor="lightgrey"), margin={"r":0,"t":50,"l":0,"b":0})
 col_map1.plotly_chart(fig1, use_container_width=True)
 
+# Υετός
 fig2 = px.scatter_geo(capitals_plot, lat='Lat', lon='Lon', text='City', color='Precip',
                       color_continuous_scale=["lightblue","blue","darkblue","pink","purple"],
                       range_color=[0,30], projection="natural earth", scope="europe")
@@ -93,6 +88,16 @@ col_map2.plotly_chart(fig2, use_container_width=True)
 
 # Footer
 st.markdown("<div style='text-align:center; font-size:12px;'>Weather Insights Greece</div>", unsafe_allow_html=True)
+
+# ----------------------------
+# Αυτόματο animation
+# ----------------------------
+if st.session_state.play:
+    st.session_state.frame += 3
+    if st.session_state.frame >= len(df_weather):
+        st.session_state.frame = 0
+    # Ασφαλές rerun
+    st.experimental_rerun()
 
 
 

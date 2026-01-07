@@ -1,16 +1,17 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import xarray as xr
 import plotly.express as px
 import requests
+from scipy.interpolate import griddata
 
 # ---------------------------
+# 1️⃣ Σελίδα Streamlit
 st.set_page_config(layout="wide", page_title="Weather Insights Greece Model")
 st.markdown("<h2 style='text-align:left;'>Weather Insights Greece Model</h2>", unsafe_allow_html=True)
 
 # ---------------------------
-# Πρωτεύουσες Ευρώπης
+# 2️⃣ Πρωτεύουσες Ευρώπης
 capitals = pd.DataFrame({
     "City":["Athens","Berlin","Paris","Rome","Madrid","Lisbon","Warsaw","Vienna","Brussels","Copenhagen","Stockholm","Oslo","Helsinki","Budapest","Prague"],
     "Lat":[37.9838,52.5200,48.8566,41.9028,40.4168,38.7169,52.2297,48.2082,50.8503,55.6761,59.3293,59.9139,60.1699,47.4979,50.0755],
@@ -18,31 +19,39 @@ capitals = pd.DataFrame({
 })
 
 # ---------------------------
-# Fetch GFS / ICON via Open-Meteo (safe for Streamlit)
-@st.cache_data(ttl=1800)
-def fetch_gfs(lat, lon):
-    url = f"https://api.open-meteo.com/v1/gfs?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation&timezone=UTC"
-    r = requests.get(url)
-    data = r.json()
-    df = pd.DataFrame({
-        "time": pd.to_datetime(data['hourly']['time']),
-        "temperature": data['hourly']['temperature_2m'],
-        "precipitation": data['hourly']['precipitation']
-    })
-    df.fillna(0, inplace=True)
-    return df
-
-lat_center = capitals['Lat'].mean()
-lon_center = capitals['Lon'].mean()
-df_weather = fetch_gfs(lat_center, lon_center)
-
-# ---------------------------
-# Session state
+# 3️⃣ Session state
 if 'frame' not in st.session_state: st.session_state.frame = 0
 if 'map_type' not in st.session_state: st.session_state.map_type = '850hPa Temperature'
 
 # ---------------------------
-# Sidebar επιλογές
+# 4️⃣ Φόρτωση ensemble δεδομένων (placeholder Open-Meteo)
+@st.cache_data(ttl=1800)
+def fetch_ensemble(lat, lon):
+    # Εδώ μπορούμε να προσθέσουμε GFS, ICON, ECMWF (ensemble = μέσος όρος)
+    dfs = []
+    for _ in range(3):  # placeholder για 3 μοντέλα
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation&timezone=UTC"
+        r = requests.get(url)
+        data = r.json()
+        df = pd.DataFrame({
+            "time": pd.to_datetime(data['hourly']['time']),
+            "temperature": data['hourly']['temperature_2m'],
+            "precipitation": data['hourly']['precipitation']
+        })
+        dfs.append(df)
+    # Ensemble = average των 3 μοντέλων
+    df_ens = dfs[0].copy()
+    df_ens['temperature'] = np.mean([df['temperature'] for df in dfs], axis=0)
+    df_ens['precipitation'] = np.mean([df['precipitation'] for df in dfs], axis=0)
+    df_ens.fillna(0, inplace=True)
+    return df_ens
+
+lat_center = capitals['Lat'].mean()
+lon_center = capitals['Lon'].mean()
+df_weather = fetch_ensemble(lat_center, lon_center)
+
+# ---------------------------
+# 5️⃣ Sidebar επιλογές
 st.sidebar.header("Επιλογές Χρόνου")
 hours_list = df_weather['time'].dt.strftime("%Y-%m-%d %H:%M").tolist()
 selected_hour = st.sidebar.selectbox("Επιλέξτε ώρα:", hours_list, index=st.session_state.frame)
@@ -50,12 +59,12 @@ step_hours = st.sidebar.slider("Πόσες ώρες να προχωρήσει μ
 st.session_state.frame = hours_list.index(selected_hour)
 
 # ---------------------------
-# Κουμπί αλλαγής χάρτη
+# 6️⃣ Κουμπί αλλαγής χάρτη
 if st.button("Αλλαγή Χάρτη"):
     st.session_state.map_type = 'Precipitation' if st.session_state.map_type=='850hPa Temperature' else '850hPa Temperature'
 
 # ---------------------------
-# Κουμπί Next frame
+# 7️⃣ Κουμπί Next frame
 if st.button(f"Next (+{step_hours} ώρες)"):
     st.session_state.frame += step_hours
     if st.session_state.frame >= len(df_weather):
@@ -65,20 +74,19 @@ frame = st.session_state.frame
 current_time = df_weather.iloc[frame]['time']
 
 # ---------------------------
-# Δημιουργία smooth grid για heatmap
-lats = np.linspace(35, 60, 50)
-lons = np.linspace(-10, 30, 50)
+# 8️⃣ Δημιουργία smooth grid για heatmap
+lats = np.linspace(35, 60, 100)
+lons = np.linspace(-10, 30, 100)
 lon_grid, lat_grid = np.meshgrid(lons, lats)
 
 if st.session_state.map_type == '850hPa Temperature':
-    # interpolate temperature αερίων μαζών
-    temp_value = df_weather.iloc[frame]['temperature']
+    # interpolate temperature
+    values = df_weather.iloc[frame]['temperature']
     temp_grid = 15 + 10*np.sin(lat_grid/10)*np.cos(lon_grid/10)  # placeholder για smooth gradient
 else:
-    temp_value = df_weather.iloc[frame]['precipitation']
-    temp_grid = np.random.uniform(0,20, size=lat_grid.shape)  # placeholder για smooth precipitation
+    values = df_weather.iloc[frame]['precipitation']
+    temp_grid = np.random.uniform(0,20, size=lat_grid.shape)
 
-# Flatten για Plotly
 plot_df = pd.DataFrame({
     "lat": lat_grid.flatten(),
     "lon": lon_grid.flatten(),
@@ -86,12 +94,13 @@ plot_df = pd.DataFrame({
 })
 
 # ---------------------------
-# Plot με gradient
+# 9️⃣ Plot με background map
 fig = px.density_mapbox(
-    plot_df, lat='lat', lon='lon', z='value', radius=20,
+    plot_df, lat='lat', lon='lon', z='value', radius=15,
     center=dict(lat=50, lon=10), zoom=3,
     mapbox_style="carto-positron",
     color_continuous_scale="Turbo" if st.session_state.map_type=='850hPa Temperature' else "Blues",
+    opacity=0.6,
     range_color=[plot_df['value'].min(), plot_df['value'].max()]
 )
 
@@ -114,6 +123,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 # Footer
 st.markdown("<div style='text-align:center; font-size:12px;'>Weather Insights Greece</div>", unsafe_allow_html=True)
+
 
 
 

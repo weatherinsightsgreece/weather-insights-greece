@@ -1,4 +1,3 @@
-app.py
 import streamlit as st
 import xarray as xr
 from siphon.catalog import TDSCatalog
@@ -164,3 +163,5 @@ while st.session_state.get("playing", False):
         time.sleep(0.3)
 
     st.session_state.frame_idx = next_idx
+
+

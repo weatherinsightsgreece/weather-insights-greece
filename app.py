@@ -3,6 +3,7 @@ import pandas as pd
 import plotly.express as px
 import requests
 
+# Σελίδα
 st.set_page_config(layout="wide", page_title="Weather Insights Greece Model")
 
 # Header
@@ -12,10 +13,10 @@ st.markdown("<h2 style='text-align:left;'>Weather Insights Greece Model</h2>", u
 capitals = pd.DataFrame({
     "City":["Athens","Berlin","Paris","Rome","Madrid","Lisbon","Warsaw","Vienna","Brussels","Copenhagen","Stockholm","Oslo","Helsinki","Budapest","Prague"],
     "Lat":[37.9838,52.5200,48.8566,41.9028,40.4168,38.7169,52.2297,48.2082,50.8503,55.6761,59.3293,59.9139,60.1699,47.4979,50.0755],
-    "Lon":[23.7275,13.4050,2.3522,12.4964,-3.7038,-9.1392,21.0122,16.3738,4.3517,12.5683,18.0686,10.7522,24.9384,19.0402,14.4378]
+    "Lon":[23.7275,13.4050,2.3522,12.4964,-3.7038,-9.1392,21.0122,16.3738,4.3517,12.5686,18.0686,10.7522,24.9384,19.0402,14.4378]
 })
 
-# Φόρτωση δεδομένων από Open-Meteo
+# Φόρτωση δεδομένων
 @st.cache_data(ttl=1800)
 def fetch_weather():
     lat = capitals['Lat'].mean()
@@ -34,34 +35,22 @@ df_weather = fetch_weather()
 
 # Session state
 if 'frame' not in st.session_state: st.session_state.frame = 0
-if 'play' not in st.session_state: st.session_state.play = False
 if 'map_type' not in st.session_state: st.session_state.map_type = '850hPa Temperature'
 
 # Κουμπί αλλαγής χάρτη
 if st.button("Αλλαγή Χάρτη"):
     st.session_state.map_type = 'Precipitation' if st.session_state.map_type=='850hPa Temperature' else '850hPa Temperature'
 
-# Start / Stop κουμπιά
-col1, col2 = st.columns(2)
-if col1.button("Start"):
-    st.session_state.play = True
-if col2.button("Stop"):
-    st.session_state.play = False
-
-# Κεντρικό container για το chart
-chart_container = st.empty()
-
-# Αν play=True, αυξάνουμε το frame κάθε φορά που φορτώνει η σελίδα
-if st.session_state.play:
+# Κουμπί Next frame
+if st.button("Next (+3 ώρες)"):
     st.session_state.frame += 3
     if st.session_state.frame >= len(df_weather):
         st.session_state.frame = 0
-    st.experimental_rerun = lambda: None  # ασφάλεια: δεν κάνουμε rerun
 
 frame = st.session_state.frame
 current_time = df_weather.iloc[frame]['time']
 
-# Προσθήκη θερμοκρασίας / βροχής
+# Προσθήκη Temp/Precip στα capitals
 capitals_plot = capitals.copy()
 capitals_plot['Temp'] = df_weather.iloc[frame]['temperature']
 capitals_plot['Precip'] = df_weather.iloc[frame]['precipitation']
@@ -79,7 +68,7 @@ def temp_color(t):
 
 capitals_plot['ColorTemp'] = capitals_plot['Temp'].apply(temp_color)
 
-# Επιλογή τι θα δείχνει ο χάρτης
+# Δημιουργία χάρτη
 if st.session_state.map_type == '850hPa Temperature':
     fig = px.scatter_geo(
         capitals_plot, lat='Lat', lon='Lon', text='City', color='Temp',
@@ -99,10 +88,11 @@ fig.update_layout(
     margin={"r":0,"t":50,"l":0,"b":0}
 )
 
-chart_container.plotly_chart(fig, use_container_width=True)
+st.plotly_chart(fig, use_container_width=True)
 
 # Footer
 st.markdown("<div style='text-align:center; font-size:12px;'>Weather Insights Greece</div>", unsafe_allow_html=True)
+
 
 
 

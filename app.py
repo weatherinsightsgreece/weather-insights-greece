@@ -18,7 +18,7 @@ capitals = pd.DataFrame({
 })
 
 # ---------------------------
-# 3️⃣ Φόρτωση δεδομένων (Open-Meteo API)
+# 3️⃣ Φόρτωση δεδομένων Open-Meteo (safe)
 @st.cache_data(ttl=1800)
 def fetch_weather():
     lat = capitals['Lat'].mean()
@@ -31,7 +31,7 @@ def fetch_weather():
         "temperature": data['hourly']['temperature_2m'],
         "precipitation": data['hourly']['precipitation']
     })
-    df.fillna(0, inplace=True)  # Ασφαλές
+    df.fillna(0, inplace=True)
     return df
 
 df_weather = fetch_weather()
@@ -64,59 +64,55 @@ frame = st.session_state.frame
 current_time = df_weather.iloc[frame]['time']
 
 # ---------------------------
-# 8️⃣ Προετοιμασία DataFrame για plotting
-capitals_plot = capitals.copy()
-capitals_plot['Temp'] = df_weather.iloc[frame]['temperature']
-capitals_plot['Precip'] = df_weather.iloc[frame]['precipitation']
+# 8️⃣ Δημιουργία smooth grid για gradient
+lats = np.linspace(35, 60, 50)   # Ευρώπη
+lons = np.linspace(-10, 30, 50)
+lon_grid, lat_grid = np.meshgrid(lons, lats)
 
-# ---------------------------
-# 9️⃣ Χρωματικός κώδικας για θερμοκρασία
-def temp_color(t):
-    if t<-10: return "purple"
-    elif -9<=t<=-5: return "darkblue"
-    elif -4<=t<=0: return "lightblue"
-    elif 1<=t<=5: return "lightgreen"
-    elif 6<=t<=10: return "green"
-    elif 11<=t<=15: return "yellow"
-    elif 16<=t<=20: return "orange"
-    else: return "red"
-
-capitals_plot['ColorTemp'] = capitals_plot['Temp'].apply(temp_color)
-
-# ---------------------------
-# 10️⃣ Δημιουργία “weather model” map
 if st.session_state.map_type == '850hPa Temperature':
-    # Bubble size + color για αέριες μάζες
-    fig = px.scatter_geo(
-        capitals_plot, lat='Lat', lon='Lon', text='City',
-        size=capitals_plot['Temp'].abs()+0.1,
-        color='Temp',
-        color_continuous_scale=["purple","darkblue","lightblue","lightgreen","green","yellow","orange","red"],
-        range_color=[-20,35],
-        projection="natural earth", scope="europe"
-    )
+    # Τυχαία προσομοίωση gradient (μπορεί να αντικατασταθεί με πραγματικά δεδομένα αερίων μαζών)
+    temp_grid = 15 + 10*np.sin(lat_grid/10)*np.cos(lon_grid/10)  # fake smooth gradient
 else:
-    # Bubble size + color για υετό
-    fig = px.scatter_geo(
-        capitals_plot, lat='Lat', lon='Lon', text='City',
-        size=capitals_plot['Precip']+0.1,
-        color='Precip',
-        color_continuous_scale=["lightblue","blue","darkblue","pink","purple"],
-        range_color=[0,30],
-        projection="natural earth", scope="europe"
+    temp_grid = np.random.uniform(0,20, size=lat_grid.shape)  # fake precipitation gradient
+
+# Flatten για Plotly
+plot_df = pd.DataFrame({
+    "lat": lat_grid.flatten(),
+    "lon": lon_grid.flatten(),
+    "value": temp_grid.flatten()
+})
+
+# ---------------------------
+# 9️⃣ Χάρτης με gradient + πρωτεύουσες
+fig = px.density_mapbox(
+    plot_df, lat='lat', lon='lon', z='value', radius=20,
+    center=dict(lat=50, lon=10), zoom=3,
+    mapbox_style="carto-positron",
+    color_continuous_scale="Turbo" if st.session_state.map_type=='850hPa Temperature' else "Blues",
+    range_color=[plot_df['value'].min(), plot_df['value'].max()]
+)
+
+# Προσθήκη πρωτευουσών
+for i,row in capitals.iterrows():
+    fig.add_scattermapbox(
+        lat=[row['Lat']], lon=[row['Lon']], mode='markers+text',
+        marker=dict(size=10,color='black'),
+        text=[row['City']], textposition="top center"
     )
 
+# Title με ώρα + όνομα μοντέλου
 fig.update_layout(
-    title=f"{st.session_state.map_type} - {current_time.strftime('%Y-%m-%d %H:%M UTC')}",
-    geo=dict(showland=True, landcolor="lightgrey"),
-    margin={"r":0,"t":50,"l":0,"b":0}
+    title=f"{st.session_state.map_type} - {current_time.strftime('%Y-%m-%d %H:%M UTC')} | Weather Insights Greece Model",
+    margin={"r":0,"t":50,"l":0,"b":0},
+    height=700
 )
 
 st.plotly_chart(fig, use_container_width=True)
 
 # ---------------------------
-# 11️⃣ Footer
+# 10️⃣ Footer
 st.markdown("<div style='text-align:center; font-size:12px;'>Weather Insights Greece</div>", unsafe_allow_html=True)
+
 
 
 

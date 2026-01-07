@@ -1,4 +1,69 @@
-# Προσθήκη Temp/Precip στα capitals
+import streamlit as st
+import pandas as pd
+import plotly.express as px
+import requests
+
+# Σελίδα
+st.set_page_config(layout="wide", page_title="Weather Insights Greece Model")
+
+# Header
+st.markdown("<h2 style='text-align:left;'>Weather Insights Greece Model</h2>", unsafe_allow_html=True)
+
+# -------------------------------
+# 1️⃣ Πρωτεύουσες Ευρώπης
+capitals = pd.DataFrame({
+    "City":["Athens","Berlin","Paris","Rome","Madrid","Lisbon","Warsaw","Vienna","Brussels","Copenhagen","Stockholm","Oslo","Helsinki","Budapest","Prague"],
+    "Lat":[37.9838,52.5200,48.8566,41.9028,40.4168,38.7169,52.2297,48.2082,50.8503,55.6761,59.3293,59.9139,60.1699,47.4979,50.0755],
+    "Lon":[23.7275,13.4050,2.3522,12.4964,-3.7038,-9.1392,21.0122,16.3738,4.3517,12.5686,18.0686,10.7522,24.9384,19.0402,14.4378]
+})
+
+# -------------------------------
+# 2️⃣ Φόρτωση δεδομένων
+@st.cache_data(ttl=1800)
+def fetch_weather():
+    lat = capitals['Lat'].mean()
+    lon = capitals['Lon'].mean()
+    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation&timezone=UTC"
+    r = requests.get(url)
+    data = r.json()
+    df = pd.DataFrame({
+        "time": pd.to_datetime(data['hourly']['time']),
+        "temperature": data['hourly']['temperature_2m'],
+        "precipitation": data['hourly']['precipitation']
+    })
+    return df
+
+df_weather = fetch_weather()
+
+# -------------------------------
+# 3️⃣ Session state
+if 'frame' not in st.session_state: st.session_state.frame = 0
+if 'map_type' not in st.session_state: st.session_state.map_type = '850hPa Temperature'
+
+# -------------------------------
+# 4️⃣ Sidebar επιλογές
+st.sidebar.header("Επιλογές Χρόνου")
+hours_list = df_weather['time'].dt.strftime("%Y-%m-%d %H:%M").tolist()
+selected_hour = st.sidebar.selectbox("Επιλέξτε ώρα:", hours_list, index=st.session_state.frame)
+step_hours = st.sidebar.slider("Πόσες ώρες να προχωρήσει με το Next:", min_value=1, max_value=24, value=3, step=1)
+st.session_state.frame = hours_list.index(selected_hour)
+
+# -------------------------------
+# 5️⃣ Κουμπί αλλαγής χάρτη
+if st.button("Αλλαγή Χάρτη"):
+    st.session_state.map_type = 'Precipitation' if st.session_state.map_type=='850hPa Temperature' else '850hPa Temperature'
+
+# 6️⃣ Κουμπί Next frame
+if st.button(f"Next (+{step_hours} ώρες)"):
+    st.session_state.frame += step_hours
+    if st.session_state.frame >= len(df_weather):
+        st.session_state.frame = 0
+
+frame = st.session_state.frame
+current_time = df_weather.iloc[frame]['time']
+
+# -------------------------------
+# 7️⃣ Προσθήκη Temp/Precip στα capitals
 capitals_plot = capitals.copy()
 capitals_plot['Temp'] = df_weather.iloc[frame]['temperature']
 capitals_plot['Precip'] = df_weather.iloc[frame]['precipitation']
@@ -7,7 +72,8 @@ capitals_plot['Precip'] = df_weather.iloc[frame]['precipitation']
 capitals_plot['Temp'] = capitals_plot['Temp'].fillna(0)
 capitals_plot['Precip'] = capitals_plot['Precip'].fillna(0)
 
-# Χρώματα θερμοκρασίας
+# -------------------------------
+# 8️⃣ Χρώματα θερμοκρασίας
 def temp_color(t):
     if t<-10: return "purple"
     elif -9<=t<=-5: return "darkblue"
@@ -20,7 +86,8 @@ def temp_color(t):
 
 capitals_plot['ColorTemp'] = capitals_plot['Temp'].apply(temp_color)
 
-# Δημιουργία χάρτη με ασφαλές size
+# -------------------------------
+# 9️⃣ Δημιουργία χάρτη
 if st.session_state.map_type == '850hPa Temperature':
     fig = px.scatter_geo(
         capitals_plot, lat='Lat', lon='Lon', text='City',
@@ -39,6 +106,19 @@ else:
         range_color=[0,30],
         projection="natural earth", scope="europe"
     )
+
+fig.update_layout(
+    title=f"{st.session_state.map_type} - {current_time.strftime('%Y-%m-%d %H:%M UTC')}",
+    geo=dict(showland=True, landcolor="lightgrey"),
+    margin={"r":0,"t":50,"l":0,"b":0}
+)
+
+st.plotly_chart(fig, use_container_width=True)
+
+# -------------------------------
+# Footer
+st.markdown("<div style='text-align:center; font-size:12px;'>Weather Insights Greece</div>", unsafe_allow_html=True)
+
 
 
 

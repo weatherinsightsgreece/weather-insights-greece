@@ -1,16 +1,16 @@
 import streamlit as st
 import pandas as pd
-import plotly.express as px
 import numpy as np
+import xarray as xr
+import plotly.express as px
 import requests
 
 # ---------------------------
-# 1️⃣ Σελίδα Streamlit
 st.set_page_config(layout="wide", page_title="Weather Insights Greece Model")
 st.markdown("<h2 style='text-align:left;'>Weather Insights Greece Model</h2>", unsafe_allow_html=True)
 
 # ---------------------------
-# 2️⃣ Πρωτεύουσες Ευρώπης
+# Πρωτεύουσες Ευρώπης
 capitals = pd.DataFrame({
     "City":["Athens","Berlin","Paris","Rome","Madrid","Lisbon","Warsaw","Vienna","Brussels","Copenhagen","Stockholm","Oslo","Helsinki","Budapest","Prague"],
     "Lat":[37.9838,52.5200,48.8566,41.9028,40.4168,38.7169,52.2297,48.2082,50.8503,55.6761,59.3293,59.9139,60.1699,47.4979,50.0755],
@@ -18,12 +18,10 @@ capitals = pd.DataFrame({
 })
 
 # ---------------------------
-# 3️⃣ Φόρτωση δεδομένων Open-Meteo (safe)
+# Fetch GFS / ICON via Open-Meteo (safe for Streamlit)
 @st.cache_data(ttl=1800)
-def fetch_weather():
-    lat = capitals['Lat'].mean()
-    lon = capitals['Lon'].mean()
-    url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation&timezone=UTC"
+def fetch_gfs(lat, lon):
+    url = f"https://api.open-meteo.com/v1/gfs?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation&timezone=UTC"
     r = requests.get(url)
     data = r.json()
     df = pd.DataFrame({
@@ -34,15 +32,17 @@ def fetch_weather():
     df.fillna(0, inplace=True)
     return df
 
-df_weather = fetch_weather()
+lat_center = capitals['Lat'].mean()
+lon_center = capitals['Lon'].mean()
+df_weather = fetch_gfs(lat_center, lon_center)
 
 # ---------------------------
-# 4️⃣ Session state
+# Session state
 if 'frame' not in st.session_state: st.session_state.frame = 0
 if 'map_type' not in st.session_state: st.session_state.map_type = '850hPa Temperature'
 
 # ---------------------------
-# 5️⃣ Sidebar επιλογές
+# Sidebar επιλογές
 st.sidebar.header("Επιλογές Χρόνου")
 hours_list = df_weather['time'].dt.strftime("%Y-%m-%d %H:%M").tolist()
 selected_hour = st.sidebar.selectbox("Επιλέξτε ώρα:", hours_list, index=st.session_state.frame)
@@ -50,11 +50,12 @@ step_hours = st.sidebar.slider("Πόσες ώρες να προχωρήσει μ
 st.session_state.frame = hours_list.index(selected_hour)
 
 # ---------------------------
-# 6️⃣ Κουμπί αλλαγής χάρτη
+# Κουμπί αλλαγής χάρτη
 if st.button("Αλλαγή Χάρτη"):
     st.session_state.map_type = 'Precipitation' if st.session_state.map_type=='850hPa Temperature' else '850hPa Temperature'
 
-# 7️⃣ Κουμπί Next frame
+# ---------------------------
+# Κουμπί Next frame
 if st.button(f"Next (+{step_hours} ώρες)"):
     st.session_state.frame += step_hours
     if st.session_state.frame >= len(df_weather):
@@ -64,16 +65,18 @@ frame = st.session_state.frame
 current_time = df_weather.iloc[frame]['time']
 
 # ---------------------------
-# 8️⃣ Δημιουργία smooth grid για gradient
-lats = np.linspace(35, 60, 50)   # Ευρώπη
+# Δημιουργία smooth grid για heatmap
+lats = np.linspace(35, 60, 50)
 lons = np.linspace(-10, 30, 50)
 lon_grid, lat_grid = np.meshgrid(lons, lats)
 
 if st.session_state.map_type == '850hPa Temperature':
-    # Τυχαία προσομοίωση gradient (μπορεί να αντικατασταθεί με πραγματικά δεδομένα αερίων μαζών)
-    temp_grid = 15 + 10*np.sin(lat_grid/10)*np.cos(lon_grid/10)  # fake smooth gradient
+    # interpolate temperature αερίων μαζών
+    temp_value = df_weather.iloc[frame]['temperature']
+    temp_grid = 15 + 10*np.sin(lat_grid/10)*np.cos(lon_grid/10)  # placeholder για smooth gradient
 else:
-    temp_grid = np.random.uniform(0,20, size=lat_grid.shape)  # fake precipitation gradient
+    temp_value = df_weather.iloc[frame]['precipitation']
+    temp_grid = np.random.uniform(0,20, size=lat_grid.shape)  # placeholder για smooth precipitation
 
 # Flatten για Plotly
 plot_df = pd.DataFrame({
@@ -83,7 +86,7 @@ plot_df = pd.DataFrame({
 })
 
 # ---------------------------
-# 9️⃣ Χάρτης με gradient + πρωτεύουσες
+# Plot με gradient
 fig = px.density_mapbox(
     plot_df, lat='lat', lon='lon', z='value', radius=20,
     center=dict(lat=50, lon=10), zoom=3,
@@ -109,9 +112,9 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-# ---------------------------
-# 10️⃣ Footer
+# Footer
 st.markdown("<div style='text-align:center; font-size:12px;'>Weather Insights Greece</div>", unsafe_allow_html=True)
+
 
 
 

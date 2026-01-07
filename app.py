@@ -6,12 +6,11 @@ import requests
 from scipy.interpolate import griddata
 
 # ---------------------------
-# 1️⃣ Σελίδα Streamlit
 st.set_page_config(layout="wide", page_title="Weather Insights Greece Model")
 st.markdown("<h2 style='text-align:left;'>Weather Insights Greece Model</h2>", unsafe_allow_html=True)
 
 # ---------------------------
-# 2️⃣ Πρωτεύουσες Ευρώπης
+# Πρωτεύουσες Ευρώπης
 capitals = pd.DataFrame({
     "City":["Athens","Berlin","Paris","Rome","Madrid","Lisbon","Warsaw","Vienna","Brussels","Copenhagen","Stockholm","Oslo","Helsinki","Budapest","Prague"],
     "Lat":[37.9838,52.5200,48.8566,41.9028,40.4168,38.7169,52.2297,48.2082,50.8503,55.6761,59.3293,59.9139,60.1699,47.4979,50.0755],
@@ -19,17 +18,17 @@ capitals = pd.DataFrame({
 })
 
 # ---------------------------
-# 3️⃣ Session state
+# Session state
 if 'frame' not in st.session_state: st.session_state.frame = 0
 if 'map_type' not in st.session_state: st.session_state.map_type = '850hPa Temperature'
+if 'play' not in st.session_state: st.session_state.play = False
 
 # ---------------------------
-# 4️⃣ Φόρτωση ensemble δεδομένων (placeholder Open-Meteo)
+# Fetch ensemble (placeholder για 3 μοντέλα)
 @st.cache_data(ttl=1800)
 def fetch_ensemble(lat, lon):
-    # Εδώ μπορούμε να προσθέσουμε GFS, ICON, ECMWF (ensemble = μέσος όρος)
     dfs = []
-    for _ in range(3):  # placeholder για 3 μοντέλα
+    for _ in range(3):
         url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation&timezone=UTC"
         r = requests.get(url)
         data = r.json()
@@ -39,7 +38,6 @@ def fetch_ensemble(lat, lon):
             "precipitation": data['hourly']['precipitation']
         })
         dfs.append(df)
-    # Ensemble = average των 3 μοντέλων
     df_ens = dfs[0].copy()
     df_ens['temperature'] = np.mean([df['temperature'] for df in dfs], axis=0)
     df_ens['precipitation'] = np.mean([df['precipitation'] for df in dfs], axis=0)
@@ -51,21 +49,31 @@ lon_center = capitals['Lon'].mean()
 df_weather = fetch_ensemble(lat_center, lon_center)
 
 # ---------------------------
-# 5️⃣ Sidebar επιλογές
+# Sidebar επιλογές
 st.sidebar.header("Επιλογές Χρόνου")
 hours_list = df_weather['time'].dt.strftime("%Y-%m-%d %H:%M").tolist()
 selected_hour = st.sidebar.selectbox("Επιλέξτε ώρα:", hours_list, index=st.session_state.frame)
-step_hours = st.sidebar.slider("Πόσες ώρες να προχωρήσει με το Next:", min_value=1, max_value=24, value=3, step=1)
+step_hours = st.sidebar.slider("Βήμα ωρών Next:", min_value=1, max_value=24, value=3, step=1)
 st.session_state.frame = hours_list.index(selected_hour)
 
 # ---------------------------
-# 6️⃣ Κουμπί αλλαγής χάρτη
+# Κουμπί αλλαγής χάρτη
 if st.button("Αλλαγή Χάρτη"):
     st.session_state.map_type = 'Precipitation' if st.session_state.map_type=='850hPa Temperature' else '850hPa Temperature'
 
 # ---------------------------
-# 7️⃣ Κουμπί Next frame
-if st.button(f"Next (+{step_hours} ώρες)"):
+# Κουμπί Start / Stop
+col1, col2 = st.columns(2)
+with col1:
+    if st.button("Start"):
+        st.session_state.play = True
+with col2:
+    if st.button("Stop"):
+        st.session_state.play = False
+
+# ---------------------------
+# Next frame αυτόματα
+if st.session_state.play:
     st.session_state.frame += step_hours
     if st.session_state.frame >= len(df_weather):
         st.session_state.frame = 0
@@ -74,18 +82,25 @@ frame = st.session_state.frame
 current_time = df_weather.iloc[frame]['time']
 
 # ---------------------------
-# 8️⃣ Δημιουργία smooth grid για heatmap
-lats = np.linspace(35, 60, 100)
-lons = np.linspace(-10, 30, 100)
+# Grid Ευρώπης
+lats = np.linspace(35, 70, 100)
+lons = np.linspace(-10, 40, 100)
 lon_grid, lat_grid = np.meshgrid(lons, lats)
 
 if st.session_state.map_type == '850hPa Temperature':
-    # interpolate temperature
-    values = df_weather.iloc[frame]['temperature']
-    temp_grid = 15 + 10*np.sin(lat_grid/10)*np.cos(lon_grid/10)  # placeholder για smooth gradient
+    # Custom color scale θερμοκρασιών
+    temp_values = df_weather.iloc[frame]['temperature']
+    temp_grid = 15 + 10*np.sin(lat_grid/10)*np.cos(lon_grid/10)  # placeholder
+    color_scale = [
+        [-10,"#800080"], [-5,"#00008B"], [0,"#ADD8E6"], [5,"#90EE90"], 
+        [10,"#008000"], [15,"#FFFF00"], [20,"#FFA500"], [25,"#FF0000"]
+    ]
 else:
-    values = df_weather.iloc[frame]['precipitation']
-    temp_grid = np.random.uniform(0,20, size=lat_grid.shape)
+    temp_values = df_weather.iloc[frame]['precipitation']
+    temp_grid = np.random.uniform(0,25, size=lat_grid.shape)
+    color_scale = [
+        [0,"#ADD8E6"], [5,"#0000FF"], [10,"#00008B"], [15,"#FFC0CB"], [25,"#800080"]
+    ]
 
 plot_df = pd.DataFrame({
     "lat": lat_grid.flatten(),
@@ -94,17 +109,17 @@ plot_df = pd.DataFrame({
 })
 
 # ---------------------------
-# 9️⃣ Plot με background map
+# Plot με background map
 fig = px.density_mapbox(
     plot_df, lat='lat', lon='lon', z='value', radius=15,
-    center=dict(lat=50, lon=10), zoom=3,
+    center=dict(lat=55, lon=10), zoom=3,
     mapbox_style="carto-positron",
-    color_continuous_scale="Turbo" if st.session_state.map_type=='850hPa Temperature' else "Blues",
+    color_continuous_scale=color_scale,
     opacity=0.6,
-    range_color=[plot_df['value'].min(), plot_df['value'].max()]
+    range_color=[np.min(temp_grid), np.max(temp_grid)]
 )
 
-# Προσθήκη πρωτευουσών
+# Πρωτεύουσες
 for i,row in capitals.iterrows():
     fig.add_scattermapbox(
         lat=[row['Lat']], lon=[row['Lon']], mode='markers+text',
@@ -112,7 +127,7 @@ for i,row in capitals.iterrows():
         text=[row['City']], textposition="top center"
     )
 
-# Title με ώρα + όνομα μοντέλου
+# Header
 fig.update_layout(
     title=f"{st.session_state.map_type} - {current_time.strftime('%Y-%m-%d %H:%M UTC')} | Weather Insights Greece Model",
     margin={"r":0,"t":50,"l":0,"b":0},
@@ -120,9 +135,8 @@ fig.update_layout(
 )
 
 st.plotly_chart(fig, use_container_width=True)
-
-# Footer
 st.markdown("<div style='text-align:center; font-size:12px;'>Weather Insights Greece</div>", unsafe_allow_html=True)
+
 
 
 

@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import requests
-from scipy.interpolate import griddata
 
 # ---------------------------
 st.set_page_config(layout="wide", page_title="Weather Insights Greece Model")
@@ -88,19 +87,15 @@ lons = np.linspace(-10, 40, 100)
 lon_grid, lat_grid = np.meshgrid(lons, lats)
 
 if st.session_state.map_type == '850hPa Temperature':
-    # Custom color scale θερμοκρασιών
-    temp_values = df_weather.iloc[frame]['temperature']
-    temp_grid = 15 + 10*np.sin(lat_grid/10)*np.cos(lon_grid/10)  # placeholder
-    color_scale = [
-        [-10,"#800080"], [-5,"#00008B"], [0,"#ADD8E6"], [5,"#90EE90"], 
-        [10,"#008000"], [15,"#FFFF00"], [20,"#FFA500"], [25,"#FF0000"]
-    ]
+    # Placeholder temperature data για smooth gradient
+    temp_grid = 15 + 10*np.sin(lat_grid/10)*np.cos(lon_grid/10)
+    # Custom color scale μόνο με χρώματα
+    color_scale = ["#800080", "#00008B", "#ADD8E6", "#90EE90", "#008000", "#FFFF00", "#FFA500", "#FF0000"]
+    range_color = [-15, 30]
 else:
-    temp_values = df_weather.iloc[frame]['precipitation']
     temp_grid = np.random.uniform(0,25, size=lat_grid.shape)
-    color_scale = [
-        [0,"#ADD8E6"], [5,"#0000FF"], [10,"#00008B"], [15,"#FFC0CB"], [25,"#800080"]
-    ]
+    color_scale = ["#ADD8E6","#0000FF","#00008B","#FFC0CB","#800080"]
+    range_color = [0,25]
 
 plot_df = pd.DataFrame({
     "lat": lat_grid.flatten(),
@@ -116,10 +111,10 @@ fig = px.density_mapbox(
     mapbox_style="carto-positron",
     color_continuous_scale=color_scale,
     opacity=0.6,
-    range_color=[np.min(temp_grid), np.max(temp_grid)]
+    range_color=range_color
 )
 
-# Πρωτεύουσες
+# Προσθήκη πρωτευουσών
 for i,row in capitals.iterrows():
     fig.add_scattermapbox(
         lat=[row['Lat']], lon=[row['Lon']], mode='markers+text',

@@ -37,13 +37,22 @@ df_weather = fetch_weather()
 if 'frame' not in st.session_state: st.session_state.frame = 0
 if 'map_type' not in st.session_state: st.session_state.map_type = '850hPa Temperature'
 
+# Sidebar επιλογές
+st.sidebar.header("Επιλογές Χρόνου")
+hours_list = df_weather['time'].dt.strftime("%Y-%m-%d %H:%M").tolist()
+selected_hour = st.sidebar.selectbox("Επιλέξτε ώρα:", hours_list, index=st.session_state.frame)
+step_hours = st.sidebar.slider("Πόσες ώρες να προχωρήσει με το Next:", min_value=1, max_value=24, value=3, step=1)
+
+# Ενημέρωση frame από επιλογή
+st.session_state.frame = hours_list.index(selected_hour)
+
 # Κουμπί αλλαγής χάρτη
 if st.button("Αλλαγή Χάρτη"):
     st.session_state.map_type = 'Precipitation' if st.session_state.map_type=='850hPa Temperature' else '850hPa Temperature'
 
 # Κουμπί Next frame
-if st.button("Next (+3 ώρες)"):
-    st.session_state.frame += 3
+if st.button(f"Next (+{step_hours} ώρες)"):
+    st.session_state.frame += step_hours
     if st.session_state.frame >= len(df_weather):
         st.session_state.frame = 0
 
@@ -71,15 +80,21 @@ capitals_plot['ColorTemp'] = capitals_plot['Temp'].apply(temp_color)
 # Δημιουργία χάρτη
 if st.session_state.map_type == '850hPa Temperature':
     fig = px.scatter_geo(
-        capitals_plot, lat='Lat', lon='Lon', text='City', color='Temp',
+        capitals_plot, lat='Lat', lon='Lon', text='City',
+        size='Temp', size_max=25,  # bubble size proportional στη θερμοκρασία
+        color='Temp',
         color_continuous_scale=["purple","darkblue","lightblue","lightgreen","green","yellow","orange","red"],
-        range_color=[-20,35], projection="natural earth", scope="europe"
+        range_color=[-20,35],
+        projection="natural earth", scope="europe"
     )
 else:
     fig = px.scatter_geo(
-        capitals_plot, lat='Lat', lon='Lon', text='City', color='Precip',
+        capitals_plot, lat='Lat', lon='Lon', text='City',
+        size='Precip', size_max=25,  # bubble size proportional στον υετό
+        color='Precip',
         color_continuous_scale=["lightblue","blue","darkblue","pink","purple"],
-        range_color=[0,30], projection="natural earth", scope="europe"
+        range_color=[0,30],
+        projection="natural earth", scope="europe"
     )
 
 fig.update_layout(
@@ -92,6 +107,7 @@ st.plotly_chart(fig, use_container_width=True)
 
 # Footer
 st.markdown("<div style='text-align:center; font-size:12px;'>Weather Insights Greece</div>", unsafe_allow_html=True)
+
 
 
 

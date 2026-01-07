@@ -3,7 +3,6 @@ import pandas as pd
 import plotly.express as px
 import requests
 from datetime import datetime
-import time
 
 st.set_page_config(layout="wide", page_title="Weather Insights Greece Model")
 st.markdown("<h2 style='text-align:left;'>Weather Insights Greece Model</h2>", unsafe_allow_html=True)
@@ -15,7 +14,7 @@ capitals = pd.DataFrame({
     "Lon":[23.7275,13.4050,2.3522,12.4964,-3.7038,-9.1392,21.0122,16.3738,4.3517,12.5683,18.0686,10.7522,24.9384,19.0402,14.4378]
 })
 
-# Φόρτωση δεδομένων από Open-Meteo
+# Φόρτωση δεδομένων
 @st.cache_data(ttl=1800)
 def fetch_weather():
     lat = capitals['Lat'].mean()
@@ -32,9 +31,7 @@ def fetch_weather():
 
 df_weather = fetch_weather()
 
-# ----------------------------
 # Session state για animation
-# ----------------------------
 if 'frame' not in st.session_state:
     st.session_state.frame = 0
 if 'play' not in st.session_state:
@@ -46,6 +43,13 @@ if col1.button("Start"):
     st.session_state.play = True
 if col2.button("Stop"):
     st.session_state.play = False
+
+# Αυτόματο loop χωρίς rerun
+if st.session_state.play:
+    st_autorefresh(interval=1500, key="timer")  # Ανανεώνει κάθε 1.5 δευτερόλεπτο
+    st.session_state.frame += 3
+    if st.session_state.frame >= len(df_weather):
+        st.session_state.frame = 0
 
 frame = st.session_state.frame
 current_time = df_weather.iloc[frame]['time']
@@ -61,13 +65,11 @@ def temp_color(t):
     elif 16<=t<=20: return "orange"
     else: return "red"
 
-# Προσθήκη χρωμάτων
 capitals_plot = capitals.copy()
 capitals_plot['Temp'] = df_weather.iloc[frame]['temperature']
 capitals_plot['Precip'] = df_weather.iloc[frame]['precipitation']
-capitals_plot['ColorTemp'] = capitals_plot['Temp'].apply(temp_color)
 
-# Δημιουργία δύο charts side-by-side
+# Δημιουργία charts side-by-side
 col_map1, col_map2 = st.columns(2)
 
 # 850hPa Temperature
@@ -89,15 +91,6 @@ col_map2.plotly_chart(fig2, use_container_width=True)
 # Footer
 st.markdown("<div style='text-align:center; font-size:12px;'>Weather Insights Greece</div>", unsafe_allow_html=True)
 
-# ----------------------------
-# Αυτόματο animation
-# ----------------------------
-if st.session_state.play:
-    st.session_state.frame += 3
-    if st.session_state.frame >= len(df_weather):
-        st.session_state.frame = 0
-    # Ασφαλές rerun
-    st.experimental_rerun()
 
 
 

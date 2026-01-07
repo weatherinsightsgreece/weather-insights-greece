@@ -1,24 +1,24 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import numpy as np
 import requests
 
-# Σελίδα
+# ---------------------------
+# 1️⃣ Σελίδα Streamlit
 st.set_page_config(layout="wide", page_title="Weather Insights Greece Model")
-
-# Header
 st.markdown("<h2 style='text-align:left;'>Weather Insights Greece Model</h2>", unsafe_allow_html=True)
 
-# -------------------------------
-# 1️⃣ Πρωτεύουσες Ευρώπης
+# ---------------------------
+# 2️⃣ Πρωτεύουσες Ευρώπης
 capitals = pd.DataFrame({
     "City":["Athens","Berlin","Paris","Rome","Madrid","Lisbon","Warsaw","Vienna","Brussels","Copenhagen","Stockholm","Oslo","Helsinki","Budapest","Prague"],
     "Lat":[37.9838,52.5200,48.8566,41.9028,40.4168,38.7169,52.2297,48.2082,50.8503,55.6761,59.3293,59.9139,60.1699,47.4979,50.0755],
     "Lon":[23.7275,13.4050,2.3522,12.4964,-3.7038,-9.1392,21.0122,16.3738,4.3517,12.5686,18.0686,10.7522,24.9384,19.0402,14.4378]
 })
 
-# -------------------------------
-# 2️⃣ Φόρτωση δεδομένων
+# ---------------------------
+# 3️⃣ Φόρτωση δεδομένων (Open-Meteo API)
 @st.cache_data(ttl=1800)
 def fetch_weather():
     lat = capitals['Lat'].mean()
@@ -31,29 +31,30 @@ def fetch_weather():
         "temperature": data['hourly']['temperature_2m'],
         "precipitation": data['hourly']['precipitation']
     })
+    df.fillna(0, inplace=True)  # Ασφαλές
     return df
 
 df_weather = fetch_weather()
 
-# -------------------------------
-# 3️⃣ Session state
+# ---------------------------
+# 4️⃣ Session state
 if 'frame' not in st.session_state: st.session_state.frame = 0
 if 'map_type' not in st.session_state: st.session_state.map_type = '850hPa Temperature'
 
-# -------------------------------
-# 4️⃣ Sidebar επιλογές
+# ---------------------------
+# 5️⃣ Sidebar επιλογές
 st.sidebar.header("Επιλογές Χρόνου")
 hours_list = df_weather['time'].dt.strftime("%Y-%m-%d %H:%M").tolist()
 selected_hour = st.sidebar.selectbox("Επιλέξτε ώρα:", hours_list, index=st.session_state.frame)
 step_hours = st.sidebar.slider("Πόσες ώρες να προχωρήσει με το Next:", min_value=1, max_value=24, value=3, step=1)
 st.session_state.frame = hours_list.index(selected_hour)
 
-# -------------------------------
-# 5️⃣ Κουμπί αλλαγής χάρτη
+# ---------------------------
+# 6️⃣ Κουμπί αλλαγής χάρτη
 if st.button("Αλλαγή Χάρτη"):
     st.session_state.map_type = 'Precipitation' if st.session_state.map_type=='850hPa Temperature' else '850hPa Temperature'
 
-# 6️⃣ Κουμπί Next frame
+# 7️⃣ Κουμπί Next frame
 if st.button(f"Next (+{step_hours} ώρες)"):
     st.session_state.frame += step_hours
     if st.session_state.frame >= len(df_weather):
@@ -62,18 +63,14 @@ if st.button(f"Next (+{step_hours} ώρες)"):
 frame = st.session_state.frame
 current_time = df_weather.iloc[frame]['time']
 
-# -------------------------------
-# 7️⃣ Προσθήκη Temp/Precip στα capitals
+# ---------------------------
+# 8️⃣ Προετοιμασία DataFrame για plotting
 capitals_plot = capitals.copy()
 capitals_plot['Temp'] = df_weather.iloc[frame]['temperature']
 capitals_plot['Precip'] = df_weather.iloc[frame]['precipitation']
 
-# Αν υπάρχουν NaN, βάζουμε 0
-capitals_plot['Temp'] = capitals_plot['Temp'].fillna(0)
-capitals_plot['Precip'] = capitals_plot['Precip'].fillna(0)
-
-# -------------------------------
-# 8️⃣ Χρώματα θερμοκρασίας
+# ---------------------------
+# 9️⃣ Χρωματικός κώδικας για θερμοκρασία
 def temp_color(t):
     if t<-10: return "purple"
     elif -9<=t<=-5: return "darkblue"
@@ -86,21 +83,23 @@ def temp_color(t):
 
 capitals_plot['ColorTemp'] = capitals_plot['Temp'].apply(temp_color)
 
-# -------------------------------
-# 9️⃣ Δημιουργία χάρτη
+# ---------------------------
+# 10️⃣ Δημιουργία “weather model” map
 if st.session_state.map_type == '850hPa Temperature':
+    # Bubble size + color για αέριες μάζες
     fig = px.scatter_geo(
         capitals_plot, lat='Lat', lon='Lon', text='City',
-        size=capitals_plot['Temp'].abs()+0.1,  # size πάντα >0
+        size=capitals_plot['Temp'].abs()+0.1,
         color='Temp',
         color_continuous_scale=["purple","darkblue","lightblue","lightgreen","green","yellow","orange","red"],
         range_color=[-20,35],
         projection="natural earth", scope="europe"
     )
 else:
+    # Bubble size + color για υετό
     fig = px.scatter_geo(
         capitals_plot, lat='Lat', lon='Lon', text='City',
-        size=capitals_plot['Precip']+0.1,  # size πάντα >0
+        size=capitals_plot['Precip']+0.1,
         color='Precip',
         color_continuous_scale=["lightblue","blue","darkblue","pink","purple"],
         range_color=[0,30],
@@ -115,9 +114,10 @@ fig.update_layout(
 
 st.plotly_chart(fig, use_container_width=True)
 
-# -------------------------------
-# Footer
+# ---------------------------
+# 11️⃣ Footer
 st.markdown("<div style='text-align:center; font-size:12px;'>Weather Insights Greece</div>", unsafe_allow_html=True)
+
 
 
 
